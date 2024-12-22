@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="kr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INSTA360 동영상과 GPX를 이용한 로드뷰</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: row;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #map {
+            width: 60%;
+            height: 100%;
+        }
+        #panorama {
+            width: 40%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="panorama"></div>
+
+    <script>
+        // 지도 초기화
+        const map = L.map('map').setView([35.59408, 129.1090966], 19);
+
+        // 타일 추가
+        L.tileLayer('https://map.pstatic.net/nrs/api/v1/raster/satellite/{z}/{x}/{y}.jpg?version=5.11', {
+            maxZoom: 25,
+        }).addTo(map);
+
+        let allMarkers = []; // 모든 마커 저장용
+
+        // JSON 파일 경로
+        const jsonFilePath = 'snapshots2/snapshots2.json';
+
+        // 지도 마커 업데이트 함수
+        function updateMarkers(data, activeIndex) {
+            allMarkers.forEach(marker => map.removeLayer(marker)); // 기존 마커 제거
+            allMarkers = []; // 배열 초기화
+
+            data.forEach((snapshot, index) => {
+                const { latitude, longitude } = snapshot;
+                const marker = L.circleMarker([latitude, longitude], {
+                    color: index === activeIndex ? 'red' : 'blue',
+                    radius: 6,
+                    fillColor: index === activeIndex ? 'red' : '#3388ff',
+                    fillOpacity: 0.7
+                }).addTo(map);
+
+                allMarkers.push(marker);
+
+                // 마커 클릭 이벤트
+                marker.on('click', () => {
+                    loadPanorama(index, data);
+                });
+            });
+        }
+
+        // 파노라마 로드 함수
+        function loadPanorama(index, data) {
+            const snapshot = data[index];
+            const { latitude, longitude, filename } = snapshot;
+
+            // 지도 마커 업데이트
+            updateMarkers(data, index);
+
+            // 지도 중심 이동
+            map.setView([latitude, longitude], 19);
+
+            // 파노라마 설정
+            pannellum.viewer('panorama', {
+                type: 'equirectangular',
+                panorama: `snapshots2/${filename}`,
+                autoLoad: true,
+            });
+        }
+
+        // JSON 데이터 로드 및 초기 파노라마 로드
+        fetch(jsonFilePath)
+            .then(response => response.json())
+            .then(data => {
+                updateMarkers(data, 0); // 초기 마커 생성 및 업데이트
+                loadPanorama(0, data); // 초기 파노라마 로드
+            })
+            .catch(error => console.error('JSON 데이터를 로드하는 중 오류가 발생했습니다:', error));
+    </script>
+	
+</body>
+</html>
