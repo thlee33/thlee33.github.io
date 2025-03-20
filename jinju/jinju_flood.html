@@ -37,7 +37,7 @@
 
         const viewer = new Cesium.Viewer('cesiumContainer', {
             terrainProvider: new Cesium.CesiumTerrainProvider({
-                url: "https://175.197.92.213:10108/dem0501_24_msl_ndmi/",
+                url: "http://175.197.92.213:10108/dem0501_24_msl_ndmi/",
                 //requestWaterMask: true,
                 //requestVertexNormals: true
             }),
@@ -51,7 +51,7 @@
         // 3D Tileset (건물 데이터) 추가
         const buildingTileset = viewer.scene.primitives.add(
             new Cesium.Cesium3DTileset({
-                url: "https://175.197.92.213:10108/static/cesium_data/tileset/tn_buld_tiles_merge1/output_1/35813/tileset.json"
+                url: "http://175.197.92.213:10108/static/cesium_data/tileset/tn_buld_tiles_merge1/output_1/35813/tileset.json"
             })
         );
 		
@@ -218,6 +218,18 @@
 		loadFloodArea();  // 침수 지역 로드
         loadIndustrialBuildings();		
 
+		// 지형 데이터 요청
+		fetch("/api/dem0501_24_msl_ndmi/layer.json")
+		  .then(response => response.json())
+		  .then(data => console.log("DEM Data:", data))
+		  .catch(error => console.error("Error fetching DEM data:", error));
+
+		// 건물 3D Tiles 요청
+		fetch("/api/buld_tileset")
+		  .then(response => response.json())
+		  .then(data => console.log("Building Tileset Data:", data))
+		  .catch(error => console.error("Error fetching Building Tileset:", error));
+		  
     </script>
 </body>
 </html>
