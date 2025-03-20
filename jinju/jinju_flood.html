@@ -37,7 +37,7 @@
 
         const viewer = new Cesium.Viewer('cesiumContainer', {
             terrainProvider: new Cesium.CesiumTerrainProvider({
-                url: "http://175.197.92.213:10108/dem0501_24_msl_ndmi/",
+                url: "https://175.197.92.213:10108/dem0501_24_msl_ndmi/",
                 //requestWaterMask: true,
                 //requestVertexNormals: true
             }),
@@ -51,7 +51,7 @@
         // 3D Tileset (건물 데이터) 추가
         const buildingTileset = viewer.scene.primitives.add(
             new Cesium.Cesium3DTileset({
-                url: "http://175.197.92.213:10108/static/cesium_data/tileset/tn_buld_tiles_merge1/output_1/35813/tileset.json"
+                url: "https://175.197.92.213:10108/static/cesium_data/tileset/tn_buld_tiles_merge1/output_1/35813/tileset.json"
             })
         );
 		
