@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jinju</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.97/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.97/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #layerControl {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+    <div id="layerControl">
+        <label><input type="checkbox" id="toggleIndustrialBuildings"> [산업단지 건물]</label>
+        <label><input type="checkbox" id="toggleFloodMarks"> [침수흔적도]</label>
+        <label><input type="checkbox" id="toggleFloodRisk1"> [하천범람지도(국가)]</label>
+        <label><input type="checkbox" id="toggleFloodRisk2"> [하천범람지도(지방)]</label>
+        <label><input type="checkbox" id="toggleIndustrial"> [산업단지 경계]</label>
+        <label><input type="checkbox" id="toggleSewer"> [하수관로]</label>
+    </div>
+
+    <script>
+        Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzYTM3ODhlNC1jOWUxLTRhOTYtYTgwZC1iMDA3OGJiMTQwZDciLCJpZCI6MTI5NDU5LCJpYXQiOjE2ODIwNTc4NjN9.GC-W9QfAFa9rXMh2Ow2rSC5UvLcwtS_qjWJ1v454z1A';  // Replace with your Cesium Ion access token
+
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            terrainProvider: new Cesium.CesiumTerrainProvider({
+                url: "http://175.197.92.213:10108/dem0501_24_msl_ndmi/",
+                //requestWaterMask: true,
+                //requestVertexNormals: true
+            }),
+            //imageryProvider: false, // 베이스맵 기본 OFF
+            animation: false,
+            timeline: false,
+            baseLayerPicker: false,
+            fullscreenButton: false
+        });
+
+        // 3D Tileset (건물 데이터) 추가
+        const buildingTileset = viewer.scene.primitives.add(
+            new Cesium.Cesium3DTileset({
+                url: "http://175.197.92.213:10108/static/cesium_data/tileset/tn_buld_tiles_merge1/output_1/35813/tileset.json"
+            })
+        );
+		
+        //viewer.imageryLayers.removeAll(); // 기본 레이어 제거
+		viewer.scene.globe.depthTestAgainstTerrain = true;
+		viewer.scene.orderIndependentTranslucency = false;  // 반투명 요소가 다른 객체 아래로 가지 않도록 설정		
+        viewer.scene.globe.terrainExaggeration = 1.0; //지형 수직 과장 비율 
+        viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(128.1154, 35.1753, 5000)
+        });
+        
+        let layers = {};
+
+        let industrialLayer, sewerLayer, industrialBuildingsLayer;
+        
+      
+        document.getElementById("toggleIndustrial").addEventListener("change", function () {
+            if (industrialLayer) industrialLayer.show = this.checked;
+        });
+        document.getElementById("toggleSewer").addEventListener("change", function () {
+            if (sewerLayer) sewerLayer.show = this.checked;
+        });
+    
+        function getColorByHeight(height) {
+            if (height < 15) return Cesium.Color.BLUE.withAlpha(0.8);
+            if (height < 25) return Cesium.Color.GREEN.withAlpha(0.8);
+            if (height < 30) return Cesium.Color.PURPLE.withAlpha(0.8);
+            if (height < 45) return Cesium.Color.ORANGE.withAlpha(0.8);
+            return Cesium.Color.RED.withAlpha(0.8);
+        }
+		
+        async function loadIndustrialBuildings() {
+            industrialBuildingsLayer = await Cesium.GeoJsonDataSource.load("data/jinju/tn_bd_sangpyeong.geojson");
+            industrialBuildingsLayer.entities.values.forEach(entity => {
+                if (entity.polygon) {
+                    let height = entity.properties.BLDH_BV ? entity.properties.BLDH_BV.getValue() + 1 : 11;
+                    entity.polygon.extrudedHeight = height;
+                    //entity.polygon.material = Cesium.Color.PURPLE.withAlpha(0.8);
+                    entity.polygon.material = getColorByHeight(height);					
+                    entity.polygon.outline = false;					
+                }
+            });
+            viewer.dataSources.add(industrialBuildingsLayer);
+            industrialBuildingsLayer.show = false;
+        }
+
+		async function loadFloodArea() {
+			const jsonUrl = "flood.geojson"; // 사용할 침수 GeoJSON 경로 지정
+
+			fetch(jsonUrl)
+				.then(res => res.json())
+				.then(jsonData => {
+					if (!jsonData.features || jsonData.features.length === 0) {
+						console.error("No features found in JSON data.");
+						return;
+					}
+
+					const feature = jsonData.features[0];
+					const coordinates = feature.geometry.coordinates[0];
+
+					if (!coordinates || coordinates.length === 0) {
+						console.error("Invalid geometry coordinates:", feature.geometry);
+						return;
+					}
+
+					const jsonGeomArray = [];
+					coordinates.forEach(coord => {
+						jsonGeomArray.push(coord[0]); // longitude
+						jsonGeomArray.push(coord[1]); // latitude
+						jsonGeomArray.push(1); // height - 조금 위에 보이도록 올림
+					});
+
+					if (jsonGeomArray.length === 0) {
+						console.error("No valid coordinates found.");
+						return;
+					}
+
+					// GroundPrimitive로 변경하여 색상 오류 해결
+                    viewer.scene.groundPrimitives.add(new Cesium.GroundPrimitive({
+                        geometryInstances: new Cesium.GeometryInstance({
+                            geometry: new Cesium.PolygonGeometry({
+                                polygonHierarchy: new Cesium.PolygonHierarchy(
+                                    Cesium.Cartesian3.fromDegreesArrayHeights(jsonGeomArray)
+                                ),
+                                vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT,
+                            }),
+                            id: feature.properties.fid
+                        }),
+						classificationType: Cesium.ClassificationType.TERRAIN, // 지형을 따라가도록
+                        appearance: getWaterTexture(139, 69, 19, 0.7),  //흙탕물 느낌 
+                    }));
+
+					console.log("Flood area loaded:", jsonUrl);
+				})
+				.catch(error => console.error("Error loading flood area JSON:", error));
+		}
+
+
+		function getWaterTexture(r, g, b, a) {
+			console.log("Applying water texture with color:", r, g, b, a);  // ✅ 디버깅용
+			return new Cesium.EllipsoidSurfaceAppearance({
+				material: new Cesium.Material({
+					fabric: {
+						type: 'Water',
+						uniforms: {
+							baseWaterColor: new Cesium.Color(r / 255.0, g / 255.0, b / 255.0, a),
+							normalMap: "waterNormals.jpg",
+							frequency: 250.0,  //물결의 밀도. 기본 500, 값이 작으면 넓은 파장, 크면 잔물결이 많아짐
+							animationSpeed: 0.01,  //애니메이션 속도. 기본 0.01. 값이 작으면 느리고, 크면 빨라짐
+							amplitude: 8,  //파도의 크기. 기본 10?. 값이 크면 파도가 커짐
+							specularIntensity: 0.3 ,  //반사강도. 기본 1. 흙탕물이라면 반사강도가 크지는 않을 것임
+						},
+					},
+				}),
+			});
+		}
+
+        document.getElementById("toggleIndustrialBuildings").addEventListener("change", function () {
+            if (industrialBuildingsLayer) industrialBuildingsLayer.show = this.checked;
+        });
+
+        async function addLayer(id, provider) {
+            layers[id] = viewer.imageryLayers.addImageryProvider(provider);
+            layers[id].show = false;
+        }
+        
+        document.getElementById("toggleFloodMarks").addEventListener("change", function () {
+            if (layers["floodMarks"]) layers["floodMarks"].show = this.checked;
+        });
+        document.getElementById("toggleFloodRisk1").addEventListener("change", function () {
+            if (layers["floodRisk1"]) layers["floodRisk1"].show = this.checked;
+        });
+        document.getElementById("toggleFloodRisk2").addEventListener("change", function () {
+            if (layers["floodRisk2"]) layers["floodRisk2"].show = this.checked;
+        });
+        document.getElementById("toggleIndustrial").addEventListener("change", function () {
+            if (layers["industrial"]) layers["industrial"].show = this.checked;
+        });
+        document.getElementById("toggleSewer").addEventListener("change", function () {
+            if (layers["sewer"]) layers["sewer"].show = this.checked;
+        });
+        
+        async function loadFloodLayers() {
+            await addLayer("floodMarks", new Cesium.WebMapServiceImageryProvider({
+                url: "https://geo.safemap.go.kr/geoserver/safemap/wms",
+                layers: "A2SM_FLUDMARKS",
+                parameters: { transparent: "true", format: "image/png" }
+            }));
+            await addLayer("floodRisk1", new Cesium.WebMapServiceImageryProvider({
+                url: "https://geo.safemap.go.kr/geoserver/safemap/wms",
+                layers: "A2SM_FLOODFOVRRISK1",
+                parameters: { transparent: "true", format: "image/png" }
+            }));
+            await addLayer("floodRisk2", new Cesium.WebMapServiceImageryProvider({
+                url: "https://geo.safemap.go.kr/geoserver/safemap/wms",
+                layers: "A2SM_FLOODFOVRRISK2",
+                parameters: { transparent: "true", format: "image/png" }
+            }));
+        }
+        
+        //loadLayers();
+        //loadWaterPrimitive();		
+        loadFloodLayers();  //생활안전지도의 침수관련 주제도 
+		loadFloodArea();  // 침수 지역 로드
+        loadIndustrialBuildings();		
+
+    </script>
+</body>
+</html>
