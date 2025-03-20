@@ -178,12 +178,6 @@
         document.getElementById("toggleFloodRisk2").addEventListener("change", function () {
             if (layers["floodRisk2"]) layers["floodRisk2"].show = this.checked;
         });
-        document.getElementById("toggleIndustrial").addEventListener("change", function () {
-            if (layers["industrial"]) layers["industrial"].show = this.checked;
-        });
-        document.getElementById("toggleSewer").addEventListener("change", function () {
-            if (layers["sewer"]) layers["sewer"].show = this.checked;
-        });
         
         async function loadFloodLayers() {
             await addLayer("floodMarks", new Cesium.WebMapServiceImageryProvider({
