@@ -65,13 +65,6 @@
 
         let industrialLayer, sewerLayer, industrialBuildingsLayer;
         
-      
-        document.getElementById("toggleIndustrial").addEventListener("change", function () {
-            if (industrialLayer) industrialLayer.show = this.checked;
-        });
-        document.getElementById("toggleSewer").addEventListener("change", function () {
-            if (sewerLayer) sewerLayer.show = this.checked;
-        });
     
         function getColorByHeight(height) {
             if (height < 15) return Cesium.Color.BLUE.withAlpha(0.8);
