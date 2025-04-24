@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sentinel-2 COG Viewer (Titiler) - Korea (Last 5 Years)</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v9.2.4/ol.css" type="text/css">
+    <style>
+        /* CSS는 이전과 동일 */
+        html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; font-family: sans-serif; }
+        #map { position: absolute; top: 0; bottom: 80px; width: 100%; background-color: #f0f0f0; }
+        #controls { position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; background-color: #ffffff; border-top: 1px solid #ccc; box-sizing: border-box; padding: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #slider-container { display: flex; align-items: center; width: 80%; margin-bottom: 5px; }
+        #time-slider { flex-grow: 1; margin: 0 15px; cursor: pointer; }
+        #date-display { font-weight: bold; min-width: 100px; text-align: center; }
+        #status { font-size: 0.9em; color: #555; height: 1.2em; text-align: center; }
+        #map.loading * { cursor: wait !important; }
+        #map.loading::after { content: 'Loading Tiles...'; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.5); color: white; padding: 5px 10px; border-radius: 4px; z-index: 1000; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/ol@v9.2.4/dist/ol.js"></script>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="controls">
+        <div id="slider-container">
+            <label for="time-slider">Date:</label>
+            <input type="range" id="time-slider" min="0" max="1825" step="1" value="1825">
+            <span id="date-display">Loading...</span>
+        </div>
+        <div id="status">Use slider or pan/zoom map (zoom > 8) to load Sentinel-2 L2A imagery via Titiler.</div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const STAC_API_URL = 'https://earth-search.aws.element84.com/v0/search';
+        const COLLECTION = 'sentinel-s2-l2a-cogs';
+        // --- MODIFICATION: Lowered minimum zoom level ---
+        const MIN_ZOOM_LEVEL = 8;
+        const TITILER_ENDPOINT = 'https://titiler.xyz';
+
+        // --- Initial View Configuration ---
+        const INITIAL_CENTER_LONLAT = [127, 36.5];
+        const INITIAL_ZOOM = 10; // Initial zoom still below MIN_ZOOM_LEVEL
+
+        // --- DOM Elements ---
+        const mapElement = document.getElementById('map');
+        const slider = document.getElementById('time-slider');
+        const dateDisplay = document.getElementById('date-display');
+        const statusDisplay = document.getElementById('status');
+
+        // --- Global State ---
+        let map;
+        let sentinelLayer = null;
+        let currentCogUrl = null;
+        let currentStartDate, currentEndDate;
+        let debounceTimeout = null;
+        let loadingTiles = 0;
+
+        // --- Helper Functions ---
+        function formatDate(date) { /* ... 이전과 동일 ... */
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+        function getDateFromSlider() { /* ... 이전과 동일 ... */
+            const days = parseInt(slider.value, 10);
+            const date = new Date(currentStartDate);
+            date.setDate(date.getDate() + days);
+            return date;
+         }
+        function updateDateDisplay() { /* ... 이전과 동일 ... */
+            const currentDate = getDateFromSlider();
+            dateDisplay.textContent = formatDate(currentDate);
+         }
+        function initializeSliderRange() { /* ... 이전과 동일 (5년) ... */
+            const today = new Date();
+            currentEndDate = new Date(today);
+            currentEndDate.setDate(currentEndDate.getDate() - 1);
+            currentEndDate.setHours(0, 0, 0, 0);
+            currentStartDate = new Date(currentEndDate);
+            currentStartDate.setFullYear(currentStartDate.getFullYear() - 5);
+            currentStartDate.setHours(0, 0, 0, 0);
+            const diffTime = currentEndDate.getTime() - currentStartDate.getTime();
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            console.log(`Slider Range: ${formatDate(currentStartDate)} to ${formatDate(currentEndDate)} (${diffDays} days)`);
+            slider.min = 0;
+            slider.max = diffDays;
+            slider.value = diffDays;
+            updateDateDisplay();
+         }
+        function showStatus(message, isLoading = false) { /* ... 이전과 동일 ... */
+            statusDisplay.textContent = message;
+            if (isLoading) {
+                mapElement.classList.add('loading');
+                statusDisplay.style.color = '#ff8c00';
+            } else {
+                mapElement.classList.remove('loading');
+                statusDisplay.style.color = '#555';
+                if (!message.toLowerCase().includes('error') && !message.toLowerCase().includes('use slider') && !message.toLowerCase().includes('zoom in') && message !== '') {
+                    if (loadingTiles === 0) {
+                        setTimeout(() => {
+                            if (statusDisplay.textContent === message && loadingTiles === 0) {
+                                statusDisplay.textContent = '';
+                            }
+                        }, 4000);
+                    }
+                }
+            }
+        }
+
+        // --- MODIFICATION: Helper function to get bbox center ---
+        /**
+         * Calculates the center of a bounding box.
+         * @param {Array<number>} bbox [minLon, minLat, maxLon, maxLat]
+         * @returns {Array<number>} [centerLon, centerLat]
+         */
+        function getBboxCenter(bbox) {
+            if (!bbox || bbox.length < 4) return [0, 0];
+            return [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
+        }
+
+        // --- MODIFICATION: Helper function for squared distance ---
+        /**
+         * Calculates the squared Euclidean distance between two points (lon, lat).
+         * Faster than Haversine and sufficient for sorting by proximity.
+         * @param {Array<number>} point1 [lon1, lat1]
+         * @param {Array<number>} point2 [lon2, lat2]
+         * @returns {number} Squared distance
+         */
+        function calculateDistanceSquared(point1, point2) {
+            const dx = point1[0] - point2[0];
+            const dy = point1[1] - point2[1];
+            return dx * dx + dy * dy;
+        }
+
+
+        /**
+         * --- MODIFICATION: Renamed and returns array of {url, bbox} ---
+         * Queries STAC API and returns info for items with a 'visual' asset.
+         * @param {Array<number>} queryBbox Bounding box for STAC query (EPSG:4326)
+         * @param {string} dateString Date in YYYY-MM-DD format
+         * @returns {Promise<Array<{url: string, bbox: Array<number>}>>} Array of objects containing visual asset URL and item bbox.
+         */
+        async function querySTACForVisualAssetsInfo(queryBbox, dateString) {
+            const queryDate = `${dateString}T00:00:00Z/${dateString}T23:59:59Z`;
+            const stacQuery = {
+                'collections': [COLLECTION],
+                'bbox': queryBbox,
+                'datetime': queryDate,
+                'limit': 25, // Increase limit slightly to get more candidates near center
+                'sortby': [ // Keep sorting by cloud cover primarily
+                    { 'field': 'properties.eo:cloud_cover', 'direction': 'asc' },
+                    { 'field': 'properties.datetime', 'direction': 'desc' }
+                ]
+            };
+
+            console.log('STAC Query:', JSON.stringify(stacQuery));
+            showStatus(`Querying STAC for ${dateString}...`, true);
+
+            try {
+                const response = await fetch(STAC_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/geo+json' },
+                    body: JSON.stringify(stacQuery)
+                });
+                if (!response.ok) { /* ... error handling ... */
+                    let errorBody = await response.text();
+                    throw new Error(`STAC API Error: ${response.status} ${response.statusText}. ${errorBody}`);
+                 }
+                const data = await response.json();
+                console.log('STAC Response:', data);
+
+                if (!data.features || data.features.length === 0) {
+                    showStatus(`No Sentinel-2 items found for ${dateString} in this area.`, false);
+                    return []; // Return empty array
+                }
+
+                const assetsInfo = [];
+                for (const feature of data.features) {
+                    if (feature.assets?.visual?.href && feature.bbox) {
+                        assetsInfo.push({
+                            url: feature.assets.visual.href,
+                            bbox: feature.bbox // Store the item's bounding box
+                        });
+                    }
+                }
+
+                if (assetsInfo.length === 0) {
+                    showStatus(`Found ${data.features.length} items, but none had a 'visual' asset with bbox for ${dateString}.`, false);
+                } else {
+                     console.log(`Found ${assetsInfo.length} items with visual asset.`);
+                }
+                return assetsInfo; // Return array of info objects
+
+            } catch (error) { /* ... error handling ... */
+                console.error('Error querying STAC API:', error);
+                showStatus(`Error querying STAC: ${error.message}`, false);
+                return []; // Return empty array on error
+            }
+        }
+
+        /**
+         * Updates or creates the Sentinel-2 XYZ tile layer using Titiler
+         * @param {string|null} cogUrl URL of the visual COG asset, or null to remove layer
+         */
+        function displayCogLayerViaTitiler(cogUrl) { /* ... 이전과 거의 동일 ... */
+            if (cogUrl === currentCogUrl) {
+                 console.log("COG URL unchanged, no layer update needed.");
+                 if (sentinelLayer && !sentinelLayer.getVisible()) { // Re-show if hidden by zoom
+                     sentinelLayer.setVisible(true);
+                 }
+                return;
+            }
+            if (sentinelLayer) { map.removeLayer(sentinelLayer); sentinelLayer = null; console.log('Removed previous Sentinel layer.'); }
+            if (!cogUrl) { currentCogUrl = null; return; }
+
+            console.log(`Creating Titiler layer for: ${cogUrl}`);
+            const tileUrl = `${TITILER_ENDPOINT}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?url=${encodeURIComponent(cogUrl)}`;
+            const xyzSource = new ol.source.XYZ({
+                url: tileUrl,
+                tileSize: 256,
+                attributions: `Sentinel-2 data via ${TITILER_ENDPOINT}`,
+                maxZoom: 18,
+                // --- MODIFICATION: Add transition for smoother updates ---
+                transition: 250 // milliseconds for fade-in effect
+            });
+
+            attachTileLoadListeners(xyzSource);
+            sentinelLayer = new ol.layer.Tile({ source: xyzSource, opacity: 0.85 });
+            map.addLayer(sentinelLayer);
+             const layers = map.getLayers().getArray(); // Adjust layer order if needed
+             if (layers.length > 1 && layers[0] !== sentinelLayer) {
+                 map.getLayers().remove(sentinelLayer);
+                 map.getLayers().insertAt(1, sentinelLayer);
+             }
+            currentCogUrl = cogUrl;
+            // Status is handled by tile load events now
+        }
+
+        // --- Tile Loading Listener Functions (modified to accept source) ---
+        const tileLoadStart = () => { /* ... 이전과 동일 ... */
+             loadingTiles++;
+             if (loadingTiles === 1) { showStatus('Loading Sentinel tiles...', true); }
+        };
+        const tileLoadEnd = () => { /* ... 이전과 동일 ... */
+             loadingTiles--;
+             if (loadingTiles <= 0) {
+                 loadingTiles = 0;
+                 setTimeout(() => {
+                     if (loadingTiles === 0 && !mapElement.classList.contains('loading-forced')) {
+                         showStatus('Sentinel layer updated.', false);
+                     }
+                 }, 200);
+             }
+        };
+        function attachTileLoadListeners(source) { /* ... 이전과 동일 ... */
+              if (source) {
+                  source.on('tileloadstart', tileLoadStart);
+                  source.on('tileloadend', tileLoadEnd);
+                  source.on('tileloaderror', tileLoadEnd);
+              }
+         }
+
+
+        // --- Main Update Trigger ---
+        function updateSentinelLayer() {
+            const view = map.getView();
+            const zoom = view.getZoom();
+
+            clearTimeout(debounceTimeout);
+
+            // --- MODIFICATION: Use updated MIN_ZOOM_LEVEL ---
+            if (zoom < MIN_ZOOM_LEVEL) {
+                showStatus(`Zoom in (current: ${zoom.toFixed(1)}, required: ${MIN_ZOOM_LEVEL}+) to see Sentinel imagery.`, false);
+                if (sentinelLayer) { /* ... remove layer ... */
+                    map.removeLayer(sentinelLayer);
+                    sentinelLayer = null;
+                    currentCogUrl = null;
+                    console.log("Removed Sentinel layer (zoom too low).");
+                 }
+                return;
+            }
+
+            debounceTimeout = setTimeout(async () => {
+                 mapElement.classList.add('loading-forced');
+                 loadingTiles = 0;
+
+                 try {
+                    const mapExtent = view.calculateExtent(map.getSize());
+                    const geographicExtent = ol.proj.transformExtent(mapExtent, 'EPSG:3857', 'EPSG:4326');
+                    geographicExtent[0] = Math.max(-180, geographicExtent[0]); /* ... extent clamping ... */
+                    geographicExtent[2] = Math.min(180, geographicExtent[2]);
+                    geographicExtent[1] = Math.max(-90, geographicExtent[1]);
+                    geographicExtent[3] = Math.min(90, geographicExtent[3]);
+
+                    const selectedDate = getDateFromSlider();
+                    const dateString = formatDate(selectedDate);
+
+                    // --- MODIFICATION: Get map center ---
+                    const mapCenterMercator = view.getCenter();
+                    const mapCenterLonLat = ol.proj.toLonLat(mapCenterMercator); // Transform to EPSG:4326
+
+                    // Get info for multiple assets
+                    const assetsInfo = await querySTACForVisualAssetsInfo(geographicExtent, dateString);
+
+                    let selectedCogUrl = null;
+                    if (assetsInfo && assetsInfo.length > 0) {
+                        // --- MODIFICATION: Sort assets by distance to map center ---
+                        assetsInfo.sort((a, b) => {
+                            const centerA = getBboxCenter(a.bbox);
+                            const centerB = getBboxCenter(b.bbox);
+                            const distA = calculateDistanceSquared(mapCenterLonLat, centerA);
+                            const distB = calculateDistanceSquared(mapCenterLonLat, centerB);
+                            return distA - distB; // Sort ascending by distance
+                        });
+
+                        // Select the URL of the closest item
+                        selectedCogUrl = assetsInfo[0].url;
+                        console.log(`Selected COG closest to map center: ${selectedCogUrl}`);
+                    } else {
+                        console.log("No suitable visual assets found after query.");
+                        // Status message already shown by query function
+                    }
+
+                    // Display layer using the selected (closest) COG URL
+                    displayCogLayerViaTitiler(selectedCogUrl);
+
+                } catch (error) { /* ... error handling ... */
+                    console.error("Error during update process:", error);
+                    showStatus(`Error updating layer: ${error.message}`, false);
+                    displayCogLayerViaTitiler(null);
+                 } finally { /* ... loading status cleanup ... */
+                     mapElement.classList.remove('loading-forced');
+                     if (loadingTiles === 0 && statusDisplay.style.color === 'rgb(255, 140, 0)') {
+                         showStatus('', false);
+                     } else if (loadingTiles > 0) {
+                         showStatus('Loading Sentinel tiles...', true);
+                     }
+                 }
+            }, 500);
+        }
+
+
+        // --- Initialization ---
+        function initMap() {
+            initializeSliderRange();
+            const osmLayer = new ol.layer.Tile({ source: new ol.source.OSM() });
+            const koreaCenterMercator = ol.proj.fromLonLat(INITIAL_CENTER_LONLAT);
+            const view = new ol.View({ center: koreaCenterMercator, zoom: INITIAL_ZOOM });
+            map = new ol.Map({ target: 'map', layers: [osmLayer], view: view });
+
+             // Event Listeners
+            map.on('moveend', () => { updateSentinelLayer(); });
+            slider.addEventListener('input', () => { updateDateDisplay(); updateSentinelLayer(); });
+
+             // Initial status message based on new MIN_ZOOM_LEVEL
+             const currentZoom = view.getZoom();
+             // --- MODIFICATION: Use updated MIN_ZOOM_LEVEL ---
+             if (currentZoom >= MIN_ZOOM_LEVEL) {
+                updateSentinelLayer();
+             } else {
+                 showStatus(`Zoom in (current: ${currentZoom.toFixed(1)}, required: ${MIN_ZOOM_LEVEL}+) to load imagery.`, false);
+             }
+        }
+
+        // Start the application
+        initMap();
+    </script>
+</body>
+</html>
