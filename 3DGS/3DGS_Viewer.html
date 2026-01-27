@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FOSS4G 2026: 3DGS Viewer</title>
+    <title> 3DGS Viewer</title>
     <script src="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.css" rel="stylesheet" />
     <script type="importmap">
@@ -61,7 +61,8 @@
             transform: translate(-50%, -50%); color: white; 
             font-size: 16px; display: none; z-index: 102;
             background: rgba(0,0,0,0.8); padding: 20px;
-            border-radius: 10px;
+            border-radius: 10px; max-width: 80%;
+            text-align: center;
         }
         
         /* 경고 메시지 */
@@ -72,6 +73,19 @@
             border-radius: 8px; max-width: 300px; z-index: 11;
             font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
+        
+        /* 포맷 뱃지 */
+        .format-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .format-ply { background: #2196F3; color: white; }
+        .format-splat { background: #4CAF50; color: white; }
+        .format-spz { background: #FF9800; color: white; }
         
         /* 마커 정보 표시 */
         .maplibregl-popup-content {
@@ -104,7 +118,7 @@
 <div id="map"></div>
 
 <div id="controls">
-    <h4> 🌏 마커 아이콘을 클릭하면 3DGS가 보입니다. </h4>
+    <h4>🌏 마커 아이콘을 클릭하면 3DGS가 보입니다.</h4>
 
     <select id="mapStyleSelect">
         <option value="carto-light">🗺️ Carto Light</option>
@@ -115,9 +129,9 @@
     <p style="font-size: 12px; color: #666; margin-top: 15px; line-height: 1.5;">
         💡 새로운 3DGS를 올리고 싶은 경우 지도를 확대 이동하고 아래 버튼을 클릭하세요
     </p>
-    <input type="file" id="file-input" accept=".splat" style="display: none;">
+    <input type="file" id="file-input" accept=".splat,.ply,.spz" style="display: none;">
     <button class="btn-load" onclick="document.getElementById('file-input').click()">
-        📂 .SPLAT 파일 열기
+        📂 3DGS 파일 열기 (.ply/.splat)
     </button>
 </div>
 
@@ -151,21 +165,23 @@
             new GaussianSplats3D.AbortablePromise((_, reject) => reject(reason));
     }
 
-    // 샘플 데이터 (실제 작동하는 .splat 파일)
+    // 샘플 데이터 (다양한 포맷)
     const sampleData = [
         { 
             name: '정원 (Garden)', 
             loc: [132.4535, 34.3954], 
             url: 'https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/garden/garden-7k.splat',
-            color: '#ff4444',
-            description: '정원 3D 스캔 데이터'
+            color: '#4CAF50',
+            description: '정원 3D 스캔 데이터',
+            format: 'splat'
         },
         { 
             name: '자전거 (Bicycle)', 
             loc: [132.455, 34.397], 
             url: 'https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bicycle/bicycle-7k.splat',
             color: '#007bff',
-            description: '자전거 3D 스캔 데이터'
+            description: '자전거 3D 스캔 데이터',
+            format: 'splat'
         }
     ];
 
@@ -235,14 +251,18 @@
             .setLngLat(data.loc)
             .addTo(map);
         
+        // 포맷 뱃지
+        const formatClass = `format-${data.format}`;
+        const formatBadge = `<span class="format-badge ${formatClass}">.${data.format.toUpperCase()}</span>`;
+        
         // 팝업 생성
         const popup = new maplibregl.Popup({ 
             offset: 25,
             closeButton: false 
         }).setHTML(`
-            <h4>${data.name}</h4>
+            <h4>${data.name} ${formatBadge}</h4>
             <p style="margin: 8px 0; font-size: 13px; color: #666;">${data.description || ''}</p>
-            <button onclick="window.openViewer('${data.url}', '${data.name}')">
+            <button onclick="window.openViewer('${data.url || ''}', '${data.name}', '${data.format}', null, '${markers.length}')">
                 🎯 3D 뷰어 열기
             </button>
         `);
@@ -252,8 +272,17 @@
         
         // 클릭 시 뷰어 열기
         el.addEventListener('click', () => {
-            openViewer(data.url, data.name);
+            openViewer(data.url || null, data.name, data.format, data.buffer || null);
         });
+    }
+
+    // 파일 확장자로 포맷 감지
+    function detectFormat(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        if (ext === 'ply') return 'ply';
+        if (ext === 'spz') return 'spz';
+        if (ext === 'splat') return 'splat';
+        return 'splat'; // 기본값
     }
 
     // 파일 업로드 처리
@@ -261,22 +290,26 @@
         const file = e.target.files[0];
         if (!file) return;
 
-        // Data URL로 변환
-        const reader = new FileReader();
-        const dataUrl = await new Promise((resolve, reject) => {
-            reader.onload = (e) => resolve(e.target.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
+        const format = detectFormat(file.name);
+        
+        // 모든 포맷을 ArrayBuffer로 읽기
+        const arrayBuffer = await file.arrayBuffer();
 
         // 현재 지도 중심에 마커 추가
         const center = map.getCenter();
+        const colorMap = {
+            'ply': '#2196F3',
+            'splat': '#4CAF50',
+            'spz': '#FF9800'
+        };
+        
         const newData = {
-            name: file.name.replace('.splat', ''),
+            name: file.name.replace(/\.(ply|splat|spz)$/, ''),
             loc: [center.lng, center.lat],
-            url: dataUrl,
-            color: '#28a745',
-            description: '업로드된 로컬 파일'
+            buffer: arrayBuffer,  // ArrayBuffer 저장
+            color: colorMap[format],
+            description: `업로드된 ${format.toUpperCase()} 파일`,
+            format: format
         };
         
         addMarker(newData);
@@ -289,21 +322,28 @@
         });
         
         setTimeout(() => {
-            openViewer(dataUrl, newData.name);
+            openViewer(null, newData.name, format, arrayBuffer);
         }, 1000);
     });
 
     // 3DGS 뷰어 열기
     window.openViewer = openViewer;
     
-    async function openViewer(url, name) {
+    async function openViewer(url, name, format, arrayBuffer = null) {
         const popup = document.getElementById('gs-popup');
         const loadingText = document.getElementById('loading-text');
         const container = document.getElementById('gs-container');
         
         popup.style.display = 'block';
         loadingText.style.display = 'block';
-        loadingText.textContent = `"${name}" 로딩 중...`;
+        
+        const formatUpper = format.toUpperCase();
+        loadingText.innerHTML = `
+            <div>"${name}"</div>
+            <div style="font-size: 14px; margin-top: 10px; opacity: 0.8;">
+                <span class="format-badge format-${format}">.${formatUpper}</span> 파일 로딩 중...
+            </div>
+        `;
         
         try {
             // 기존 뷰어 정리
@@ -313,25 +353,71 @@
                 } catch (e) {
                     console.warn('Viewer dispose error:', e);
                 }
-                container.innerHTML = '';
             }
+            
+            // 컨테이너 완전 초기화
+            container.innerHTML = '';
+            
+            // DOM 업데이트가 완료될 때까지 대기
+            await new Promise(resolve => setTimeout(resolve, 100));
 
-            // 새 뷰어 생성 - 더 안전한 옵션 사용
-            viewer = new GaussianSplats3D.Viewer({
+            // 새 뷰어 생성
+            const viewerOptions = {
                 rootElement: container,
                 useBuiltInControls: true,
                 selfDriven: false,
-                sharedMemoryForWorkers: false,  // SharedArrayBuffer 비활성화
-                gpuAcceleratedSort: false  // GPU 가속 비활성화 (안정성)
-            });
+                sharedMemoryForWorkers: false,
+                gpuAcceleratedSort: false,
+                loadingSpinner: null  // 모든 포맷에서 비활성화
+            };
+            
+            viewer = new GaussianSplats3D.Viewer(viewerOptions);
 
-            // .splat 파일 로드
-            await viewer.addSplatScene(url, {
-                format: GaussianSplats3D.SceneFormat.Splat,
+            // 포맷에 따른 로드 옵션 설정
+            let sceneFormat;
+            let loadOptions = {
                 splatAlphaRemovalThreshold: 5,
                 showLoadingUI: false,
                 progressiveLoad: false
-            });
+            };
+
+            switch(format) {
+                case 'ply':
+                    sceneFormat = GaussianSplats3D.SceneFormat.Ply;
+                    loadingText.innerHTML += '<div style="font-size: 12px; margin-top: 5px;">PLY 파일 파싱 중... (시간이 걸릴 수 있습니다)</div>';
+                    break;
+                case 'spz':
+                    sceneFormat = GaussianSplats3D.SceneFormat.SPZ;
+                    loadingText.innerHTML += '<div style="font-size: 12px; margin-top: 5px;">압축 파일 압축 해제 중...</div>';
+                    break;
+                case 'splat':
+                default:
+                    sceneFormat = GaussianSplats3D.SceneFormat.Splat;
+                    break;
+            }
+
+            loadOptions.format = sceneFormat;
+
+            // URL 또는 ArrayBuffer로 파일 로드
+            if (arrayBuffer) {
+                // ArrayBuffer를 Blob으로 변환 후 Blob URL 생성
+                const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+                const blobUrl = URL.createObjectURL(blob);
+                
+                try {
+                    await viewer.addSplatScene(blobUrl, loadOptions);
+                    // 로드 완료 후 Blob URL 정리
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                } catch (err) {
+                    URL.revokeObjectURL(blobUrl);
+                    throw err;
+                }
+            } else if (url) {
+                // 외부 URL 사용
+                await viewer.addSplatScene(url, loadOptions);
+            } else {
+                throw new Error('URL 또는 ArrayBuffer가 필요합니다.');
+            }
 
             loadingText.style.display = 'none';
             viewer.start();
@@ -344,7 +430,10 @@
                     <div>로딩 실패</div>
                     <div style="font-size: 12px; margin-top: 10px; opacity: 0.8;">${err.message}</div>
                     <div style="font-size: 11px; margin-top: 10px; opacity: 0.6;">
-                        GitHub Pages에서는 일부 기능이 제한될 수 있습니다.
+                        ${format.toUpperCase()} 파일이 손상되었거나 호환되지 않을 수 있습니다.
+                    </div>
+                    <div style="font-size: 11px; margin-top: 5px; opacity: 0.6;">
+                        NGINX 서버의 COOP/COEP 헤더 설정을 확인하세요.
                     </div>
                 </div>
             `;
