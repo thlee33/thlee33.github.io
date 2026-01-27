@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>FOSS4G 2026: 3DGS Viewer</title>
+    <title>3DGS Viewer</title>
     <script src="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.css" rel="stylesheet" />
     <script type="importmap">
@@ -91,22 +91,22 @@
 <div id="map"></div>
 
 <div id="controls">
-    <h3>🌏 FOSS4G 2026 Viewer</h3>
-    
+    <h4> 🌏 마커 아이콘을 클릭하면 3DGS가 보입니다. </h4>
+
     <select id="mapStyleSelect">
         <option value="carto-light">🗺️ Carto Light</option>
         <option value="osm">🗺️ Standard OSM</option>
         <option value="carto-dark">🗺️ Carto Dark</option>
     </select>
     
+    <p style="font-size: 12px; color: #666; margin-top: 15px; line-height: 1.5;">
+        💡 새로운 3DGS를 올리고 싶은 경우 지도를 확대 이동하고 아래 버튼을 클릭하세요
+    </p>
     <input type="file" id="file-input" accept=".splat" style="display: none;">
     <button class="btn-load" onclick="document.getElementById('file-input').click()">
         📂 .SPLAT 파일 열기
     </button>
     
-    <p style="font-size: 12px; color: #666; margin-top: 15px; line-height: 1.5;">
-        💡 지도에서 마커를 클릭하거나 파일을 업로드하여 3D 모델을 확인하세요.
-    </p>
 </div>
 
 <div id="gs-popup">
@@ -137,7 +137,7 @@
         { 
             name: '자전거 (Bicycle)', 
             loc: [132.455, 34.397], 
-            url: 'https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bicycle/bicycle-7k.splat',
+            url: 'https://huggingface.co/datasets/dylanebert/3dgs/blob/main/bicycle/bicycle-7k-mini.splat',
             color: '#007bff',
             description: '자전거 3D 스캔 데이터'
         }
@@ -155,7 +155,7 @@
         container: 'map',
         style: createMapStyle('carto-light'),
         center: [132.4535, 34.3954],
-        zoom: 14,
+        zoom: 16,
         pitch: 45
     });
 
@@ -290,7 +290,12 @@
             viewer = new GaussianSplats3D.Viewer({
                 'rootElement': container,
                 'useBuiltInControls': true,
-                'selfDriven': false
+                'selfDriven': false,
+                'camera': {
+                    'up': [0, -1, 0]  // 카메라 업 벡터 조정
+                },
+                'initialCameraPosition': [0, 1, 5],
+                'initialCameraLookAt': [0, 0, 0]
             });
 
             // .splat 파일 로드
@@ -298,7 +303,10 @@
                 'format': GaussianSplats3D.SceneFormat.Splat,
                 'splatAlphaRemovalThreshold': 5,
                 'showLoadingUI': false,
-                'progressiveLoad': false
+                'progressiveLoad': false,
+                'rotation': [0, 0, 0, 1],  // 쿼터니언 (회전 없음)
+                'position': [0, 0, 0],
+                'scale': [1, 1, 1]
             });
 
             loadingText.style.display = 'none';
