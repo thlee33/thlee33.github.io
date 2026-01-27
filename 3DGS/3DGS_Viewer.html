@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>FOSS4G 2026: 3DGS Viewer</title>
+    <script src="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.css" rel="stylesheet" />
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.157.0/build/three.module.js",
+            "gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.3.3/build/gaussian-splats-3d.module.js"
+        }
+    }
+    </script>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Pretendard', -apple-system, sans-serif; overflow: hidden; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        
+        /* 컨트롤 패널 */
+        #controls {
+            position: absolute; top: 20px; left: 20px; background: white;
+            padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 10; width: 300px;
+        }
+        #controls h3 { margin: 0 0 15px 0; font-size: 18px; color: #333; }
+        
+        select, .btn-load { 
+            width: 100%; padding: 12px; border-radius: 8px; 
+            border: 1px solid #ddd; margin-top: 10px; 
+            font-weight: 600; cursor: pointer; font-size: 14px;
+        }
+        .btn-load { 
+            background: #28a745; color: white; border: none; 
+            transition: background 0.2s;
+        }
+        .btn-load:hover { background: #218838; }
+        
+        /* 3DGS 뷰어 팝업 */
+        #gs-popup {
+            display: none; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); width: 85vw; height: 80vh;
+            background: #000; border-radius: 20px; z-index: 100; 
+            border: 1px solid #444; box-shadow: 0 10px 50px rgba(0,0,0,0.5);
+        }
+        #gs-container { width: 100%; height: 100%; border-radius: 20px; }
+        
+        #close-btn { 
+            position: absolute; top: 15px; right: 15px; 
+            background: #ff4444; color: white; border: none; 
+            border-radius: 50%; width: 40px; height: 40px; 
+            cursor: pointer; z-index: 101; font-size: 20px; 
+            font-weight: bold; transition: background 0.2s;
+        }
+        #close-btn:hover { background: #cc0000; }
+        
+        #loading-text { 
+            position: absolute; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); color: white; 
+            font-size: 16px; display: none; 
+        }
+        
+        /* 마커 정보 표시 */
+        .maplibregl-popup-content {
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .maplibregl-popup-content h4 {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            color: #333;
+        }
+        .maplibregl-popup-content button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            width: 100%;
+        }
+        .maplibregl-popup-content button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="controls">
+    <h3>🌏 FOSS4G 2026 Viewer</h3>
+    
+    <select id="mapStyleSelect">
+        <option value="carto-light">🗺️ Carto Light</option>
+        <option value="osm">🗺️ Standard OSM</option>
+        <option value="carto-dark">🗺️ Carto Dark</option>
+    </select>
+    
+    <input type="file" id="file-input" accept=".splat" style="display: none;">
+    <button class="btn-load" onclick="document.getElementById('file-input').click()">
+        📂 .SPLAT 파일 열기
+    </button>
+    
+    <p style="font-size: 12px; color: #666; margin-top: 15px; line-height: 1.5;">
+        💡 지도에서 마커를 클릭하거나 파일을 업로드하여 3D 모델을 확인하세요.
+    </p>
+</div>
+
+<div id="gs-popup">
+    <button id="close-btn">&times;</button>
+    <div id="loading-text">데이터 해석 중...</div>
+    <div id="gs-container"></div>
+</div>
+
+<script type="module">
+    import * as THREE from 'three';
+    import * as GaussianSplats3D from 'gaussian-splats-3d';
+
+    // 라이브러리 내부 버그 수정을 위한 Polyfill
+    if (GaussianSplats3D.AbortablePromise && !GaussianSplats3D.AbortablePromise.reject) {
+        GaussianSplats3D.AbortablePromise.reject = (reason) => 
+            new GaussianSplats3D.AbortablePromise((_, reject) => reject(reason));
+    }
+
+    // 샘플 데이터 (실제 작동하는 .splat 파일)
+    const sampleData = [
+        { 
+            name: '정원 (Garden)', 
+            loc: [132.4535, 34.3954], 
+            url: 'https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/garden/garden-7k.splat',
+            color: '#ff4444',
+            description: '정원 3D 스캔 데이터'
+        },
+        { 
+            name: '자전거 (Bicycle)', 
+            loc: [132.455, 34.397], 
+            url: 'https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bicycle/bicycle-7k.splat',
+            color: '#007bff',
+            description: '자전거 3D 스캔 데이터'
+        }
+    ];
+
+    // 지도 스타일
+    const mapStyles = {
+        "osm": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "carto-light": "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        "carto-dark": "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+    };
+
+    // 지도 초기화
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: createMapStyle('carto-light'),
+        center: [132.4535, 34.3954],
+        zoom: 14,
+        pitch: 45
+    });
+
+    function createMapStyle(styleKey) {
+        return {
+            "version": 8,
+            "sources": {
+                "raster": {
+                    "type": "raster",
+                    "tiles": [mapStyles[styleKey]],
+                    "tileSize": 256
+                }
+            },
+            "layers": [{
+                "id": "base",
+                "type": "raster",
+                "source": "raster"
+            }]
+        };
+    }
+
+    // 지도 스타일 변경
+    document.getElementById('mapStyleSelect').addEventListener('change', (e) => {
+        map.setStyle(createMapStyle(e.target.value));
+        
+        // 스타일 로드 후 마커 재생성
+        map.once('styledata', () => {
+            markers.forEach(m => m.remove());
+            markers = [];
+            sampleData.forEach(s => addMarker(s));
+        });
+    });
+
+    let viewer = null;
+    let markers = [];
+
+    // 샘플 마커 추가
+    sampleData.forEach(sample => addMarker(sample));
+
+    function addMarker(data) {
+        const el = document.createElement('div');
+        el.style.width = '30px';
+        el.style.height = '30px';
+        el.style.borderRadius = '50%';
+        el.style.backgroundColor = data.color;
+        el.style.border = '3px solid white';
+        el.style.boxShadow = '0 2px 10px rgba(0,0,0,0.3)';
+        el.style.cursor = 'pointer';
+        
+        const marker = new maplibregl.Marker({ element: el })
+            .setLngLat(data.loc)
+            .addTo(map);
+        
+        // 팝업 생성
+        const popup = new maplibregl.Popup({ 
+            offset: 25,
+            closeButton: false 
+        }).setHTML(`
+            <h4>${data.name}</h4>
+            <p style="margin: 8px 0; font-size: 13px; color: #666;">${data.description || ''}</p>
+            <button onclick="window.openViewer('${data.url}', '${data.name}')">
+                🎯 3D 뷰어 열기
+            </button>
+        `);
+        
+        marker.setPopup(popup);
+        markers.push(marker);
+        
+        // 클릭 시 뷰어 열기
+        el.addEventListener('click', () => {
+            openViewer(data.url, data.name);
+        });
+    }
+
+    // 파일 업로드 처리
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Data URL로 변환
+        const reader = new FileReader();
+        const dataUrl = await new Promise((resolve, reject) => {
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+
+        // 현재 지도 중심에 마커 추가
+        const center = map.getCenter();
+        const newData = {
+            name: file.name.replace('.splat', ''),
+            loc: [center.lng, center.lat],
+            url: dataUrl,
+            color: '#28a745',
+            description: '업로드된 로컬 파일'
+        };
+        
+        addMarker(newData);
+        
+        // 해당 위치로 이동 및 뷰어 열기
+        map.flyTo({ 
+            center: [center.lng, center.lat], 
+            zoom: 16,
+            duration: 1000
+        });
+        
+        setTimeout(() => {
+            openViewer(dataUrl, newData.name);
+        }, 1000);
+    });
+
+    // 3DGS 뷰어 열기
+    window.openViewer = openViewer;
+    
+    async function openViewer(url, name) {
+        const popup = document.getElementById('gs-popup');
+        const loadingText = document.getElementById('loading-text');
+        const container = document.getElementById('gs-container');
+        
+        popup.style.display = 'block';
+        loadingText.style.display = 'block';
+        loadingText.textContent = `"${name}" 로딩 중...`;
+        
+        try {
+            // 기존 뷰어 정리
+            if (viewer) {
+                viewer.dispose();
+                container.innerHTML = '';
+            }
+
+            // 새 뷰어 생성
+            viewer = new GaussianSplats3D.Viewer({
+                'rootElement': container,
+                'useBuiltInControls': true,
+                'selfDriven': false
+            });
+
+            // .splat 파일 로드
+            await viewer.addSplatScene(url, {
+                'format': GaussianSplats3D.SceneFormat.Splat,
+                'splatAlphaRemovalThreshold': 5,
+                'showLoadingUI': false,
+                'progressiveLoad': false
+            });
+
+            loadingText.style.display = 'none';
+            viewer.start();
+
+        } catch (err) {
+            console.error("Critical Load Error:", err);
+            loadingText.textContent = "로딩 실패: " + err.message;
+            setTimeout(() => {
+                popup.style.display = 'none';
+            }, 3000);
+        }
+    }
+
+    // 뷰어 닫기
+    document.getElementById('close-btn').addEventListener('click', () => {
+        document.getElementById('gs-popup').style.display = 'none';
+        if (viewer) {
+            viewer.stop();
+        }
+    });
+
+    // ESC 키로 닫기
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && document.getElementById('gs-popup').style.display === 'block') {
+            document.getElementById('close-btn').click();
+        }
+    });
+</script>
+</body>
+</html>
