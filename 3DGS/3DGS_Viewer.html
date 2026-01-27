@@ -2,14 +2,15 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>3DGS Viewer</title>
-	<script src="https://cdn.jsdelivr.net/gh/gzuidhof/coi-serviceworker@latest/coi-serviceworker.min.js"></script>	
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FOSS4G 2026: 3DGS Viewer</title>
     <script src="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.css" rel="stylesheet" />
     <script type="importmap">
     {
         "imports": {
-            "three": "https://unpkg.com/three@0.157.0/build/three.module.js",
+            "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/",
             "gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.3.3/build/gaussian-splats-3d.module.js"
         }
     }
@@ -58,7 +59,18 @@
         #loading-text { 
             position: absolute; top: 50%; left: 50%; 
             transform: translate(-50%, -50%); color: white; 
-            font-size: 16px; display: none; 
+            font-size: 16px; display: none; z-index: 102;
+            background: rgba(0,0,0,0.8); padding: 20px;
+            border-radius: 10px;
+        }
+        
+        /* 경고 메시지 */
+        #warning {
+            display: none;
+            position: absolute; top: 20px; right: 20px;
+            background: #ff9800; color: white; padding: 15px;
+            border-radius: 8px; max-width: 300px; z-index: 11;
+            font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
         
         /* 마커 정보 표시 */
@@ -107,7 +119,10 @@
     <button class="btn-load" onclick="document.getElementById('file-input').click()">
         📂 .SPLAT 파일 열기
     </button>
-    
+</div>
+
+<div id="warning">
+    ⚠️ SharedArrayBuffer를 사용할 수 없습니다. 일부 기능이 제한될 수 있습니다.
 </div>
 
 <div id="gs-popup">
@@ -119,6 +134,16 @@
 <script type="module">
     import * as THREE from 'three';
     import * as GaussianSplats3D from 'gaussian-splats-3d';
+
+    // SharedArrayBuffer 체크
+    const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
+    if (!hasSharedArrayBuffer || !crossOriginIsolated) {
+        console.warn('SharedArrayBuffer not available. Some features may be limited.');
+        document.getElementById('warning').style.display = 'block';
+        setTimeout(() => {
+            document.getElementById('warning').style.display = 'none';
+        }, 5000);
+    }
 
     // 라이브러리 내부 버그 수정을 위한 Polyfill
     if (GaussianSplats3D.AbortablePromise && !GaussianSplats3D.AbortablePromise.reject) {
@@ -138,7 +163,7 @@
         { 
             name: '자전거 (Bicycle)', 
             loc: [132.455, 34.397], 
-            url: 'https://huggingface.co/datasets/dylanebert/3dgs/blob/main/bicycle/bicycle-7k-mini.splat',
+            url: 'https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bicycle/bicycle-7k.splat',
             color: '#007bff',
             description: '자전거 3D 스캔 데이터'
         }
@@ -283,31 +308,29 @@
         try {
             // 기존 뷰어 정리
             if (viewer) {
-                viewer.dispose();
+                try {
+                    viewer.dispose();
+                } catch (e) {
+                    console.warn('Viewer dispose error:', e);
+                }
                 container.innerHTML = '';
             }
 
-            // 새 뷰어 생성
+            // 새 뷰어 생성 - 더 안전한 옵션 사용
             viewer = new GaussianSplats3D.Viewer({
-                'rootElement': container,
-                'useBuiltInControls': true,
-                'selfDriven': false,
-                'camera': {
-                    'up': [0, -1, 0]  // 카메라 업 벡터 조정
-                },
-                'initialCameraPosition': [0, 1, 5],
-                'initialCameraLookAt': [0, 0, 0]
+                rootElement: container,
+                useBuiltInControls: true,
+                selfDriven: false,
+                sharedMemoryForWorkers: false,  // SharedArrayBuffer 비활성화
+                gpuAcceleratedSort: false  // GPU 가속 비활성화 (안정성)
             });
 
             // .splat 파일 로드
             await viewer.addSplatScene(url, {
-                'format': GaussianSplats3D.SceneFormat.Splat,
-                'splatAlphaRemovalThreshold': 5,
-                'showLoadingUI': false,
-                'progressiveLoad': false,
-                'rotation': [0, 0, 0, 1],  // 쿼터니언 (회전 없음)
-                'position': [0, 0, 0],
-                'scale': [1, 1, 1]
+                format: GaussianSplats3D.SceneFormat.Splat,
+                splatAlphaRemovalThreshold: 5,
+                showLoadingUI: false,
+                progressiveLoad: false
             });
 
             loadingText.style.display = 'none';
@@ -315,10 +338,16 @@
 
         } catch (err) {
             console.error("Critical Load Error:", err);
-            loadingText.textContent = "로딩 실패: " + err.message;
-            setTimeout(() => {
-                popup.style.display = 'none';
-            }, 3000);
+            loadingText.innerHTML = `
+                <div style="text-align: center;">
+                    <div style="font-size: 24px; margin-bottom: 10px;">❌</div>
+                    <div>로딩 실패</div>
+                    <div style="font-size: 12px; margin-top: 10px; opacity: 0.8;">${err.message}</div>
+                    <div style="font-size: 11px; margin-top: 10px; opacity: 0.6;">
+                        GitHub Pages에서는 일부 기능이 제한될 수 있습니다.
+                    </div>
+                </div>
+            `;
         }
     }
 
@@ -326,7 +355,11 @@
     document.getElementById('close-btn').addEventListener('click', () => {
         document.getElementById('gs-popup').style.display = 'none';
         if (viewer) {
-            viewer.stop();
+            try {
+                viewer.stop();
+            } catch (e) {
+                console.warn('Viewer stop error:', e);
+            }
         }
     });
 
