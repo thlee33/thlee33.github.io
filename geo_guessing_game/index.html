@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo Challenge - 세계 지리 탐험</title>
+    <meta name="description" content="지도를 보고 어느 국가 또는 도시인지 맞히는 지리 챌린지! 당신의 세계 지리 실력을 테스트하세요.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;700&display=swap"
+        rel="stylesheet">
+    <!-- MapLibre GL JS -->
+    <script src='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js'></script>
+    <link href='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css' rel='stylesheet' />
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-gradient"></div>
+
+    <div class="container">
+        <!-- Setup Screen -->
+        <section id="setup-screen" class="glass-card active">
+            <h1>Geo Challenge</h1>
+            <p class="subtitle">위성 지도를 보고 국가나 도시의 이름을 맞히세요!</p>
+            <div class="input-group">
+                <input type="email" id="user-email" placeholder="이메일 주소를 입력하세요" required>
+                <button id="start-btn">탐험 시작하기</button>
+            </div>
+            <div class="instructions">
+                <p>📍 처음에는 국가(30초), 갈수록 도시 레벨로 확대됩니다.</p>
+                <p>⏱️ 한 문제당 제한시간이 0.1초씩 줄어듭니다.</p>
+            </div>
+        </section>
+
+        <!-- Game Screen -->
+        <section id="game-screen" class="glass-card">
+            <div class="game-header">
+                <div class="stat-item">
+                    <span class="label">STAGE</span>
+                    <span id="current-stage" class="value">1</span>
+                </div>
+                <div class="timer-container">
+                    <div id="timer-bar" class="timer-bar"></div>
+                    <span id="timer-text" class="timer-text">30.0s</span>
+                </div>
+                <div class="stat-item">
+                    <span class="label">SCORE</span>
+                    <span id="current-score" class="value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="label">LIVES</span>
+                    <div id="lives-display" class="lives-container">❤️❤️❤️</div>
+                </div>
+            </div>
+
+            <div id="map-container">
+                <div id="map"></div>
+                <!-- Overlay to prevent map interaction during game -->
+                <div class="map-overlay"></div>
+            </div>
+
+            <div class="question-area">
+                <div class="input-wrapper">
+                    <input type="text" id="answer-input" placeholder="국가 또는 도시 이름 (한글 또는 영어)" autocomplete="off">
+                    <button id="submit-btn">제출</button>
+                    <div id="feedback" class="feedback"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Result Screen -->
+        <section id="result-screen" class="glass-card">
+            <h2 id="result-title">탐험 종료!</h2>
+            <div class="final-stats">
+                <div class="stat-box">
+                    <span class="label">최종 단계</span>
+                    <span id="final-stage">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="label">순위</span>
+                    <span id="user-rank">-위</span>
+                </div>
+            </div>
+
+            <h3>명예의 전당 (Top 10)</h3>
+            <div id="leaderboard" class="leaderboard"></div>
+
+            <button id="restart-btn" class="secondary-btn">다시 도전하기</button>
+        </section>
+    </div>
+
+    <!-- Data - Locations -->
+    <script src="locations.js"></script>
+    <!-- Game Engine -->
+    <script src="app.js"></script>
+</body>
+
+</html>
