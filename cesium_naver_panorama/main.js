@@ -11,7 +11,7 @@ const INITIAL_PITCH = 0.0; // 수평
 Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxZTBiMzA2OS04ZTMxLTQ1NjMtYjU5OC1lMWVlMWViZmI1MjgiLCJpZCI6MzA1NywiaWF0IjoxNzY5NTc0NzY3fQ.2t_Z8vHd3k6LbTHlxTZj76HiAHsCvsxms1lkM80nOB4';
 
 const viewer = new Cesium.Viewer('cesiumContainer', {
-    //terrain: Cesium.Terrain.fromWorldTerrain(), // 3D 지형
+    terrain: Cesium.Terrain.fromWorldTerrain(), // 3D 지형
     baseLayerPicker: false,
     geocoder: false,
     homeButton: false,
@@ -145,5 +145,6 @@ panorama.addListener('pano_changed', function () {
 
 // 최초 렌더 트리거
 viewer.scene.requestRender();
+
 
 
