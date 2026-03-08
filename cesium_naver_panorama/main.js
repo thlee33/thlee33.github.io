@@ -1,4 +1,4 @@
-// 네이버 본사 그린팩토리 앞 도로 위경도
+// 어딘가 도로 위경도
 const INITIAL_LAT = 37.5798422;
 const INITIAL_LNG = 126.8879039;
 const INITIAL_HEIGHT = 40.0; // 지표면에서 약간 띄운 높이 (미터 단위)
@@ -145,4 +145,5 @@ panorama.addListener('pano_changed', function () {
 
 // 최초 렌더 트리거
 viewer.scene.requestRender();
+
 
