@@ -1,0 +1,103 @@
+:root {
+    --bg-color: #0d1117;
+    --panel-border: rgba(255, 255, 255, 0.1);
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent-color: #58a6ff;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    overflow: hidden;
+}
+
+.app-header {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: rgba(13, 17, 23, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 16px 36px;
+    text-align: center;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    pointer-events: auto;
+    transition: all 0.3s ease;
+}
+
+.app-header:hover {
+    background: rgba(13, 17, 23, 0.85);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.app-header h1 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+}
+
+.app-header p {
+    margin: 6px 0 0 0;
+    font-size: 0.9rem;
+    color: var(--accent-color);
+    font-weight: 500;
+}
+
+.split-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+.view-panel {
+    flex: 1;
+    position: relative;
+    height: 100%;
+    border-right: 2px solid #000;
+}
+
+.view-panel:last-child {
+    border-right: none;
+}
+
+.panel-label {
+    position: absolute;
+    bottom: 30px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    transition: transform 0.2s;
+}
+
+.view-panel:hover .panel-label {
+    transform: translateY(-2px);
+}
+
+/* Hide Cesium UI */
+.cesium-viewer-bottom {
+    display: none !important;
+}
+.cesium-viewer-animationContainer, .cesium-viewer-timelineContainer {
+    display: none !important;
+}

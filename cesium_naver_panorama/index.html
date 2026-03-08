@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global 3D & Local Street View</title>
+    <!-- CesiumJS -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <!-- Naver Maps API v3 -->
+    <script type="text/javascript"
+        src="https://openapi.map.naver.com/openapi/v3/maps.js?ncpClientId=9fuc03xl1p&submodules=panorama"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <header class="app-header">
+        <p>Cesium ↔ Naver 거리뷰 : 왼쪽 지도에서 보고 싶은 도로로 이동/확대한 다음, 오른쪽 거리뷰에서 마우스로 돌려보고, 화살표를 클릭해 보세요!</p>
+    </header>
+
+    <div class="split-container">
+        <!-- Left: Cesium 3D Globe -->
+        <div id="cesiumContainer" class="view-panel">
+            <div class="panel-label">Cesium 3D Globe</div>
+        </div>
+
+        <!-- Right: Naver Panorama -->
+        <div id="panoContainer" class="view-panel">
+            <div class="panel-label">Naver Street View</div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+
+</html>
