@@ -1,8 +1,8 @@
 // 네이버 본사 그린팩토리 앞 도로 위경도
-const INITIAL_LAT = 37.569042;
-const INITIAL_LNG = 126.978312;
-const INITIAL_HEIGHT = 2.0; // 지표면에서 약간 띄운 높이 (미터 단위)
-const INITIAL_HEADING = 0.0; // 북쪽
+const INITIAL_LAT = 37.5798422;
+const INITIAL_LNG = 126.8879039;
+const INITIAL_HEIGHT = 40.0; // 지표면에서 약간 띄운 높이 (미터 단위)
+const INITIAL_HEADING = 3.0; // 북쪽
 const INITIAL_PITCH = 0.0; // 수평
 
 // ==========================================
@@ -38,9 +38,9 @@ viewer.camera.setView({
 // ==========================================
 // 3D 빌딩(OSM Buildings) 타일셋 추가
 // ==========================================
-//Cesium.createOsmBuildingsAsync().then(function (buildingTileset) {
-//    viewer.scene.primitives.add(buildingTileset);
-//});
+Cesium.createOsmBuildingsAsync().then(function (buildingTileset) {
+    viewer.scene.primitives.add(buildingTileset);
+});
 
 // ==========================================
 // 2. Naver Panorama 초기화
@@ -145,3 +145,4 @@ panorama.addListener('pano_changed', function () {
 
 // 최초 렌더 트리거
 viewer.scene.requestRender();
+
